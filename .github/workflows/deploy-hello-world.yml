@@ -1,1 +1,53 @@
+name: Deploy Hello World Job
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "hello_world/**"
+      - ".github/workflows/deploy-hello-world.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PROJECT_ID: sports-investment-platform
+  REGION: us-central1
+  REPO: sip-images
+  IMAGE_NAME: hello-world
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE_NAME }}:latest"
+          docker build -t "$IMAGE" ./hello_world
+          docker push "$IMAGE"
+
+      - name: Deploy Cloud Run Job
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.IMAGE_NAME }}:latest"
+          gcloud run jobs deploy ${{ env.IMAGE_NAME }} \
+            --image "$IMAGE" \
+            --region ${{ env.REGION }} \
+            --service-account ${{ secrets.GCP_SERVICE_ACCOUNT }} \
+            --project ${{ env.PROJECT_ID }}
 
